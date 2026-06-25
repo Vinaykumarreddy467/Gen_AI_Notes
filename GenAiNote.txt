@@ -1280,5 +1280,46 @@ Best Practices:
 
 https://www.instagram.com/reel/DXXWSCvk3cL/?hl=en
 
+================================================================================
+27. ATTENTION MECHANISM (Self-Notes)
+================================================================================
 
+attenction mechanism
 
+	self attenction 
+		QKV explain
+		attenction(Q,k,v)= softmax(Qk^t /  squrt(d _ k))x v
+		
+		Qk^t - the similarity match "matches"
+		%squart(d_k)
+		
+		
+		softmax:
+		
+	multi head 
+	 top-p 
+		 if top-p=1 and top-p=0
+	 top-k
+	 	key is liek how many records it should retrive from the top results from the results.
+	 
+	selective vision
+	
+	
+	dynamically
+	a weight blend 
+
+long range dependencies:
+	informtion relayed hand to hand
+	vanishing 
+
+no parallelization
+
+parallelism
+
+the fixed-context bottleneck
+
+the wishlist for attenction delivers all three
+
+	context any two direcly
+	compute all position at once
+	no lossy fixed size bottleneck
