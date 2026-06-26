@@ -73,97 +73,161 @@ Data structures: string, list, tuple
 ================================================================================
 
 # ==============================================================================
-#                      PYTHON PRACTICE QUESTIONS
+#                      PYTHON PRACTICE QUESTIONS — ANSWERS
 # ==============================================================================
+# ponytail: one-liners, stdlib only, no over-engineering
 
-# --- SETS QUESTIONS ---
-# 1.  Create a set with the values 10, 20, 30, 40.
-# 2.  Print all elements of a set.
-# 3.  Add the value 50 to a set.
-# 4.  Remove the value 20 from a set.
-# 5.  Find the length of a set.
-# 6.  Check if 30 exists in a set.
-# 7.  Create two sets and find their union.
-# 8.  Create two sets and find their intersection.
-# 9.  Find the difference between two sets.
-# 10. Find the symmetric difference between two sets.
-# 11. Clear all elements from a set.
-# 12. Copy one set into another.
-# 13. Convert a list with duplicate values into a set.
-# 14. Find the maximum value in a set.
-# 15. Find the minimum value in a set.
-# 16. Create a set of vowels and check whether a character is a vowel.
-# 17. Remove duplicate numbers from a list using sets.
-# 18. Count the number of unique elements in a list.
-# 19. Check whether one set is a subset of another.
-# 20. Check whether two sets are disjoint.
+# --- SETS ANSWERS ---
+# 1.  Create a set with values 10, 20, 30, 40.
+s = {10, 20, 30, 40}  # {} literal, no set() needed
+# 2.  Print all elements.
+print(s)              # ponytail: print repr is fine for learning
+# 3.  Add 50.
+s.add(50)
+# 4.  Remove 20.
+s.remove(20)          # raises KeyError if missing; use discard() to ignore missing
+# 5.  Length.
+len(s)
+# 6.  Check if 30 exists.
+30 in s               # True / False
+# 7.  Union of two sets.
+s1 | s2               # or s1.union(s2)
+# 8.  Intersection.
+s1 & s2               # or s1.intersection(s2)
+# 9.  Difference.
+s1 - s2               # or s1.difference(s2) — items in s1 not in s2
+# 10. Symmetric difference.
+s1 ^ s2               # or s1.symmetric_difference(s2) — items in either, not both
+# 11. Clear all.
+s.clear()
+# 12. Copy.
+s2 = s1.copy()        # shallow copy
+# 13. Convert list with duplicates to set.
+set([1, 2, 2, 3])     # -> {1, 2, 3}; duplicates gone
+# 14. Max value.
+max(s)
+# 15. Min value.
+min(s)
+# 16. Vowel check.
+vowels = {'a','e','i','o','u'}; ch.lower() in vowels
+# 17. Remove duplicates from list.
+list(set([1, 2, 2, 3]))  # -> [1, 2, 3]; order not preserved
+# 18. Count unique elements in a list.
+len(set([1, 2, 2, 3]))   # -> 3
+# 19. Check subset.
+s1 <= s2 or s1.issubset(s2)
+# 20. Check disjoint (no common elements).
+s1.isdisjoint(s2)
 
-# --- DICTIONARY QUESTIONS ---
-# 21. Create a dictionary containing student name and age.
-# 22. Print all keys of a dictionary.
-# 23. Print all values of a dictionary.
-# 24. Access a value using its key.
-# 25. Add a new key-value pair to a dictionary.
-# 26. Update the value of an existing key.
-# 27. Remove a key from a dictionary using pop().
-# 28. Remove the last inserted item using popitem().
-# 29. Check whether a key exists in a dictionary.
-# 30. Find the length of a dictionary.
-# 31. Print all key-value pairs using a loop.
-# 32. Create a dictionary from two lists (keys and values).
-# 33. Get all keys using keys().
-# 34. Get all values using values().
-# 35. Get all key-value pairs using items().
-# 36. Create a nested dictionary for student details.
-# 37. Find the maximum value in a dictionary.
-# 38. Find the minimum value in a dictionary.
-# 39. Merge two dictionaries.
-# 40. Count the frequency of each character in a string using a dictionary.
+# --- DICTIONARY ANSWERS ---
+# 21. Create student dict.
+student = {"name": "Alice", "age": 22}
+# 22. Print all keys.
+list(student.keys())  # or: for k in student: print(k)
+# 23. Print all values.
+list(student.values())
+# 24. Access value by key.
+student["name"]       # raises KeyError if missing; student.get("name") returns None
+# 25. Add new key-value.
+student["grade"] = "A"
+# 26. Update existing key.
+student["age"] = 23
+# 27. Remove using pop().
+age = student.pop("age")  # returns the value, raises KeyError if missing
+# 28. Remove last inserted.
+student.popitem()         # returns (key, value); Python 3.7+ order guaranteed
+# 29. Check key exists.
+"name" in student
+# 30. Length.
+len(student)
+# 31. Loop all key-value pairs.
+for k, v in student.items(): print(k, v)
+# 32. Dict from two lists.
+dict(zip(["name", "age"], ["Alice", 22]))
+# 33. Get keys.
+student.keys()        # dict_keys view, use list() to cast
+# 34. Get values.
+student.values()
+# 35. Get items.
+student.items()       # dict_items of (key, value) tuples
+# 36. Nested dict.
+students = {"s1": {"name": "A", "age": 20}, "s2": {"name": "B", "age": 21}}
+# 37. Max value in dict.
+max(d.values())
+# 38. Min value in dict.
+min(d.values())
+# 39. Merge two dicts.
+{**d1, **d2}          # Python 3.5+; d1.update(d2) modifies in-place
+# 40. Char frequency in string.
+from collections import Counter; Counter("hello")  # Counter({'l': 2, 'h': 1, 'e': 1, 'o': 1})
+# ponytail: Counter is stdlib, one-liner, no custom loop needed
 
-# --- IF-ELSE QUESTIONS ---
-# 41. Check whether a number is positive or negative.
-# 42. Check whether a number is even or odd.
-# 43. Find the greater of two numbers.
-# 44. Find the largest of three numbers.
-# 45. Check whether a person is eligible to vote (18+).
-# 46. Check whether a number is divisible by 5.
-# 47. Check whether a year is a leap year.
-# 48. Check whether a character is a vowel or consonant.
-# 49. Check whether a student has passed (marks >= 40).
-# 50. Check whether a number is a multiple of both 3 and 5.
-# 51. Check whether a number is a single-digit, double-digit, or multi-digit number.
-# 52. Find whether a number is positive, negative, or zero.
-# 53. Calculate bonus: Salary > 50,000 -> Bonus 10%, Otherwise -> Bonus 5%.
-# 54. Check whether a character is uppercase or lowercase.
-# 55. Check whether a number lies between 1 and 100.
-# 56. Find the smallest of three numbers.
-# 57. Check whether a person is eligible for a senior citizen discount (age >= 60).
-# 58. Calculate grade: 90+ -> A, 75-89 -> B, 50-74 -> C, Below 50 -> Fail.
-# 59. Check whether a number is divisible by both 2 and 3.
-# 60. Build a simple calculator using if-else (+, -, *, /).
+# --- IF-ELSE ANSWERS ---
+# 41. Positive or negative.
+"positive" if n > 0 else "negative"
+# 42. Even or odd.
+"even" if n % 2 == 0 else "odd"
+# 43. Greater of two.
+max(a, b)
+# 44. Largest of three.
+max(a, b, c)
+# 45. Vote eligibility (18+).
+"eligible" if age >= 18 else "not eligible"
+# 46. Divisible by 5.
+n % 5 == 0
+# 47. Leap year.
+(year % 4 == 0 and year % 100 != 0) or year % 400 == 0
+# 48. Vowel or consonant.
+"vowel" if ch.lower() in "aeiou" else "consonant"
+# 49. Pass (marks >= 40).
+"pass" if marks >= 40 else "fail"
+# 50. Multiple of 3 and 5.
+n % 3 == 0 and n % 5 == 0
+# 51. Single/double/multi-digit.
+"single" if -9 <= n <= 9 else "double" if -99 <= n <= 99 else "multi"
+# ponytail: handles negatives; len(str(abs(n))) for digit-count-only
+# 52. Positive, negative, or zero.
+"positive" if n > 0 else "negative" if n < 0 else "zero"
+# 53. Bonus: >50K -> 10%, else 5%.
+bonus = salary * (0.1 if salary > 50000 else 0.05)
+# 54. Uppercase or lowercase.
+"upper" if ch.isupper() else "lower"
+# 55. Between 1 and 100.
+1 <= n <= 100          # Python chained comparison
+# 56. Smallest of three.
+min(a, b, c)
+# 57. Senior citizen discount (60+).
+"eligible" if age >= 60 else "not eligible"
+# 58. Grade: 90+ A, 75-89 B, 50-74 C, <50 Fail.
+"A" if marks >= 90 else "B" if marks >= 75 else "C" if marks >= 50 else "Fail"
+# 59. Divisible by 2 and 3 (i.e. 6).
+n % 2 == 0 and n % 3 == 0
+# 60. Simple calculator.
+ops = {"+": lambda a,b:a+b, "-": lambda a,b:a-b, "*": lambda a,b:a*b, "/": lambda a,b:a/b}
+ops[op](a, b)          # ponytail: dict dispatch over if-elif chain, no eval
 
-# --- INTERVIEW REVISION QUESTIONS ---
+# --- INTERVIEW REVISION — ONE-LINE ANSWERS ---
 
 # Sets:
-# * What is the difference between remove() and discard()?
-# * Why can't sets contain duplicate values?
-# * Why are sets unordered?
-# * Difference between union() and update()?
-# * Difference between difference() and symmetric_difference()?
+# remove() vs discard(): remove() raises KeyError if missing, discard() silently does nothing.
+# No duplicates: set uses hash table — duplicate hash = same slot, cannot store two identical items.
+# Unordered: hash table doesn't preserve insertion order (Python <3.7); elements stored by hash, not position.
+# union() vs update(): union() returns new set, update() adds items in-place (modifies original).
+# difference() vs symmetric_difference(): difference = items in A not in B; symmetric = items in A or B but not both.
 
 # Dictionaries:
-# * Why are dictionary keys unique?
-# * Can a list be used as a dictionary key? Why?
-# * Difference between get() and direct indexing (dict[key])?
-# * Difference between pop() and del?
-# * What is a nested dictionary?
+# Keys unique: hash table — each key maps to exactly one value; second write overwrites the first.
+# List as key? No — lists are unhashable (mutable); only immutable types (str, int, tuple) can be keys.
+# get() vs dict[key]: get() returns None (or default) on missing key; dict[key] raises KeyError.
+# pop() vs del: pop() returns the removed value; del just deletes (no return).
+# Nested dict: a dict whose values are themselves dicts, e.g. {"s1": {"name": "A"}, "s2": {"name": "B"}}.
 
 # If-Else:
-# * Difference between if, if-else, and if-elif-else?
-# * What happens if multiple conditions are True in an if-elif-else chain?
-# * Difference between == and =?
-# * Difference between and, or, and not?
-# * When should nested if statements be used?
+# if vs if-else vs if-elif-else: if = one check; if-else = two branches; if-elif-else = many branches, first True wins.
+# Multiple True conditions in elif chain: only the FIRST matching block runs; rest are skipped.
+# == vs =: == compares values; = assigns a value to a variable.
+# and / or / not: and = both True; or = at least one True; not = flips True/False.
+# Nested if: when a condition only makes sense inside another condition (e.g. check age >= 18 before checking license).
 
 ================================================================================
 5. OOP CONCEPTS
