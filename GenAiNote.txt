@@ -1446,3 +1446,166 @@ input when generating each word.
 
   These three wins are why every modern LLM uses the Transformer
   architecture, and why RNNs/LSTMs are essentially obsolete.
+
+================================================================================
+28. PRETRAINING, FINE-TUNING & SELF-SUPERVISED LEARNING
+================================================================================
+
+--- Pretraining ---
+
+  Your note:
+    pretaining
+      what is pretraining?
+
+  Explanation:
+    Pretraining is the FIRST phase of building an LLM. The model is trained
+    on a MASSIVE amount of raw text (the entire internet — trillions of tokens)
+    to learn the fundamentals of language:
+
+      - Grammar and syntax
+      - Word meanings and relationships
+      - Facts about the world
+      - General reasoning patterns
+
+    This phase is EXTREMELY expensive — thousands of GPUs running for months,
+    costing millions of dollars in compute alone.
+
+    The model does NOT know how to answer questions or follow instructions yet
+    at this stage. It only knows how to predict the next word in a sequence.
+
+--- Fine-Tuning ---
+
+  Your note:
+    fine tuining:
+      what is fine tuining?
+      trainging the model according to the
+
+  Explanation:
+    Fine-tuning takes a pretrained model and trains it FURTHER on a smaller,
+    specific dataset. The model already knows language — now we teach it
+    WHAT TO DO with that knowledge.
+
+    Types of fine-tuning:
+
+      1. Instruction Fine-Tuning:
+         - Train on (instruction, response) pairs
+         - e.g. "Translate to French: Hello" -> "Bonjour"
+         - Teaches the model to FOLLOW INSTRUCTIONS
+
+      2. Chat Fine-Tuning:
+         - Train on conversation format (multi-turn dialogue)
+         - Teaches the model to be a helpful assistant
+         - Uses techniques like RLHF (Reinforcement Learning from Human Feedback)
+
+      3. Domain Fine-Tuning:
+         - Train on specialized data (legal, medical, code)
+         - Makes the model an expert in a specific field
+
+    Fine-tuning is MUCH CHEAPER than pretraining:
+      - Uses less data (thousands/millions of examples vs trillions)
+      - Requires less compute (hours/days instead of months)
+      - Often uses human-labeled data
+
+--- Why Building Models Like GPT Takes So Long ---
+
+  Your note:
+    why is it takes so long to build models like GPT?
+      computaion power?
+      data
+      supervised learing learning
+
+  Explanation:
+    Three key reasons:
+
+    1. COMPUTATION POWER:
+       - GPT-4 was estimated to use ~25,000 GPUs running for months
+       - Requires specialized data centers with massive cooling and power
+       - A single training run can cost $100M+
+       - Most organizations simply cannot afford this
+
+    2. DATA:
+       - Models need TRILLIONS of tokens to learn effectively
+       - Collecting, cleaning, filtering, and deduplicating data is huge work
+       - Data quality matters as much as quantity (garbage in = garbage out)
+       - Legal concerns (copyright, licensing) add complexity
+
+    3. SUPERVISED LEARNING (The Old Bottleneck):
+       - Before the Transformer era, every example needed a HUMAN label
+       - "This email is spam" / "This image contains a cat"
+       - Labeling trillions of examples is IMPOSSIBLE:
+         * Too expensive (would cost billions of dollars)
+         * Too slow (would take centuries)
+
+--- Self-Supervised Learning (The Breakthrough) ---
+
+  Your note:
+    how to scale to trillions of examples if every single one requires an
+    expensive human expert.
+      solution: gpot
+      breakthrough: self supervised learning (label itself)
+
+  Explanation:
+    Self-supervised learning is the INNOVATION that made modern LLMs possible.
+    It removes the need for human labels entirely.
+
+    How it works — Next Token Prediction:
+      Input (to model):  "The cat sat on the ___"
+      Correct answer:     "mat"
+      The model predicts the next word. The ACTUAL next word IS the label.
+      No human needed to create the label — the text itself provides it.
+
+    This means:
+      - Every sentence on the internet becomes a FREE training example
+      - You can scale to trillions of examples AUTOMATICALLY
+      - This is what "GPT" (Generative Pre-Training) is all about
+      - Training data is essentially unlimited
+
+    What the model learns:
+
+      Your note: "to minimise the errors / concepts / facts / relations"
+
+      The model's goal is to MINIMIZE PREDICTION ERROR. To predict the next
+      word correctly, it MUST learn:
+
+        - CONCEPTS: what words mean (e.g., "cat" = a small furry animal)
+        - FACTS: how the world works (e.g., "cats drink milk", "Paris is in France")
+        - RELATIONS: how words and ideas connect (e.g., "it" -> "cat")
+
+      The error is measured by CROSS-ENTROPY LOSS:
+        - Model predicts "mat" with 90% confidence -> small error
+        - Model predicts "dog" with 60% confidence -> large error
+        - Backpropagation adjusts billions of weights to reduce error
+        - After trillions of examples, the model builds deep understanding
+
+  Put simply:
+    "Predict the next word. Get it wrong? Adjust. Repeat trillions of times.
+     The result: a model that understands language."
+
+--- Tokenization Types (Quick Reference) ---
+
+  Your note:
+    word tokenization
+    chatector tokenization
+    sub word tokanization
+
+  (These are covered in detail in Section 16 above. This is a quick summary.)
+
+  Word Tokenization:
+    Split text by spaces and punctuation.
+    Example: "I love AI" -> ["I", "love", "AI"]
+    Vocabulary: MILLIONS of words (huge and inefficient)
+    Problem: Cannot handle unknown words or typos
+
+  Character Tokenization:
+    Split into individual characters.
+    Example: "I love AI" -> ["I", " ", "l", "o", "v", "e", " ", "A", "I"]
+    Vocabulary: TINY (~100 characters) but sequences are VERY long
+    Problem: Loses word-level meaning, inefficient for long texts
+
+  Subword Tokenization (Used by ALL modern LLMs):
+    Split into common subword units.
+    Example: "I love AI" -> ["I", " love", " AI"]
+    Example: "unhappiness" -> ["un", "happiness"]
+    Algorithms: BPE (GPT), SentencePiece (Claude), WordPiece (BERT)
+    Advantage: Best balance of vocabulary size and sequence length
+    This is what "tokenization" means in practice for LLMs.
