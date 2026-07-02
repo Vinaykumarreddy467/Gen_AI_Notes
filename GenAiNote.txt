@@ -2203,6 +2203,131 @@ input when generating each word.
   trainer.train()
   model.save_pretrained("./lora-llama2-adapter")
 
+--- QLoRA (Quantized Low-Rank Adaptation) ---
+
+  # ponytail: like LoRA, but the base model is 4-bit quantized. Fit 70B on one GPU.
+
+  --- What is QLoRA? ---
+
+    QLoRA = Quantized LoRA. Same LoRA adapters on top, but the BASE MODEL is
+    loaded in 4-bit (instead of 16-bit). This cuts memory by ~4x while adding
+    only ~1% performance loss.
+
+    LoRA alone:     7B model needs ~16GB VRAM (full 16-bit base + small adapters)
+    QLoRA:          7B model needs ~5GB VRAM (4-bit base + same small adapters)
+    QLoRA on 70B:   70B model fits on a single 48GB GPU (impossible with LoRA alone)
+
+  --- Key Innovations (3 things make QLoRA work) ---
+
+    1. 4-bit NormalFloat (NF4):
+       A custom data type optimized for neural network weights.
+       Normal distribution -> map to 16 evenly-spaced quantiles.
+       Better than standard int4 because it allocates more precision
+       to values near zero (where most weights live).
+       Memory: 16-bit -> 4-bit = 4x reduction.
+
+    2. Double Quantization (DQ):
+       Quantize the quantization constants themselves (fp32 -> fp8).
+       Saves ~0.5 bits per parameter on top of NF4.
+       Why? Each 4-bit group needs a scaling constant in fp32.
+       DQ quantizes those constants too, saving ~3GB on a 70B model.
+
+    3. Paged Optimizers:
+       Use CPU RAM as swap space for optimizer states.
+       When GPU runs out of memory during training,
+       optimizer pages move to CPU automatically.
+       Prevents OOM errors without sacrificing throughput.
+
+  --- LoRA vs QLoRA ---
+
+    | Aspect         | LoRA                    | QLoRA                        |
+    |----------------|-------------------------|------------------------------|
+    | Base dtype     | float16 / bfloat16      | 4-bit NF4                    |
+    | VRAM (7B)      | ~16GB                   | ~5GB                         |
+    | VRAM (70B)     | ~140GB (needs 4 GPUs)   | ~48GB (1 GPU)                |
+    | Speed          | faster (no quant/dequant)| slower (quant overhead)      |
+    | Quality loss   | none                    | ~1% (NF4 is remarkably good) |
+    | Trainable %    | ~0.1% (same as LoRA)    | ~0.1% (same adapters)        |
+
+  --- QLoRA Training Script ---
+
+    pip install bitsandbytes transformers peft
+
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
+    from peft import LoraConfig, get_peft_model, TaskType
+    from datasets import Dataset
+    from transformers import TrainingArguments, Trainer
+
+    # Step 1: 4-bit quantization config
+    # This is what makes QLoRA different from LoRA
+    bnb_config = BitsAndBytesConfig(
+        load_in_4bit=True,                          # use 4-bit NF4 quantization
+        bnb_4bit_quant_type="nf4",                  # NormalFloat (best for weights)
+        bnb_4bit_compute_dtype=torch.float16,       # compute in fp16 for speed
+        bnb_4bit_use_double_quant=True,             # quantize the quantization constants
+    )
+
+    # Step 2: Load model in 4-bit (not 16-bit like in LoRA)
+    model = AutoModelForCausalLM.from_pretrained(
+        "meta-llama/Llama-2-7b-hf",
+        quantization_config=bnb_config,             # <-- QLoRA: 4-bit loading
+        device_map="auto",
+    )
+
+    tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+    tokenizer.pad_token = tokenizer.eos_token
+
+    # Step 3: LoRA config on top of 4-bit base (IDENTICAL to LoRA config)
+    lora_config = LoraConfig(
+        r=8,
+        lora_alpha=16,
+        target_modules=["q_proj", "v_proj"],
+        lora_dropout=0.05,
+        bias="none",
+        task_type=TaskType.CAUSAL_LM,
+    )
+
+    # Step 4: Wrap with PEFT (same call as LoRA)
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
+
+    # Step 5: Train (same as LoRA)
+    train_data = [{"text": "Once upon a time..."}]
+    dataset = Dataset.from_list(train_data)
+
+    def tokenize(examples):
+        return tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128)
+    tokenized_dataset = dataset.map(tokenize, batched=True)
+
+    trainer = Trainer(
+        model=model,
+        args=TrainingArguments(
+            output_dir="./qlora-output",
+            num_train_epochs=3,
+            per_device_train_batch_size=4,
+            learning_rate=2e-4,
+            fp16=True,
+        ),
+        train_dataset=tokenized_dataset,
+    )
+    trainer.train()
+    model.save_pretrained("./qlora-adapter")
+
+  --- The Critical Difference in 1 Sentence ---
+
+    LoRA:     load model in 16-bit, freeze weights, add adapters
+    QLoRA:    load model in 4-bit, freeze weights, add adapters
+
+    Everything else (LoRA config, training loop, saving) is identical.
+    The magic is that 4-bit base model takes 4x less VRAM.
+
+  --- When to Use Which ---
+
+    Use LoRA  when: you have enough VRAM (e.g., 7B on a 24GB card)
+    Use QLoRA when: you want to fine-tune a larger model (e.g., 70B on one 48GB card)
+                     or you only have a consumer GPU (e.g., 7B on an 8GB card)
+
 ================================================================================
 31. MCP (MODEL CONTEXT PROTOCOL)
 ================================================================================
