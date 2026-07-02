@@ -1865,8 +1865,8 @@ input when generating each word.
 
   Your note:
     when model outputs a raw scope for every date token we call this score
-    as LOGIT
-    these LOGITs are jsut raw, uncalibrated numbers, they cannot
+	as LOGIT
+    these LOGITs are just raw, not calibrated numbers, they cannot
 
     example:
       the cat sat on the
@@ -1974,5 +1974,276 @@ input when generating each word.
 
   Put simply:
     "Low surprise = model knew it. High surprise = model learned something.
-     Training = minimize surprise across trillions of tokens.":
-	
+     Training = minimize surprise across trillions of tokens."
+
+================================================================================
+30. LORA (LOW-RANK ADAPTATION)
+================================================================================
+# ponytail: fine-tune large models without training all parameters
+
+--- What is LoRA? ---
+
+  LoRA (Low-Rank Adaptation) is a technique that fine-tunes large language
+  models by training only TINY "adapters" instead of all parameters.
+
+  Instead of updating the full weight matrix W (billions of params):
+    W_new = W + delta_W           (delta_W = A x B, two small matrices)
+
+  Key insight:
+    The weight updates during fine-tuning have LOW "rank" -- meaning they
+    can be represented by multiplying two small matrices A and B.
+
+  Result:
+    - Trainable params: ~0.1% instead of 100%
+    - Memory usage: drastically reduced
+    - One base model + many LoRA adapters = many specialized models
+
+--- Key Parameters ---
+
+  Rank (r):
+    Controls how much adaptation is allowed.
+      r=8:    default starting point (good balance)
+      r=1:    minimal changes (near-original behavior)
+      r=64:   more adaptation (more parameters)
+    Rule: start r=8, increase if model isn't learning, decrease if overfitting.
+
+  Alpha (lora_alpha):
+    Scaling factor for the LoRA update.
+      alpha=16: default (usually 1-2x rank)
+    Formula: output = Wx + (alpha/r) * A * B * x
+
+  Dropout:
+    Prevents overfitting on small datasets.
+      dropout=0.05 or 0.1: typical values
+
+  Target Modules:
+    Which layers get the LoRA adapters.
+      ["q_proj", "v_proj"]: attention layers (most common starting point)
+      ["q_proj", "k_proj", "v_proj", "o_proj"]: all attention (more params)
+      ["q_proj", "v_proj", "gate_proj", "up_proj", "down_proj"]: full fine-tune
+
+  Task Type:
+    CAUSAL_LM: for text generation (GPT, Llama)
+    SEQ_CLS:   for classification tasks
+
+--- LoRA in 2 Classes (from scratch) ---
+
+  Example from your notes -- the core idea:
+
+    class LoRALayer(nn.Module):
+        def __init__(self, in_dim, out_dim, rank, alpha):
+            super().__init__()
+            self.A = nn.Parameter(torch.randn(in_dim, rank) * 0.01)
+            self.B = nn.Parameter(torch.zeros(rank, out_dim))
+            self.scale = alpha / rank
+
+        def forward(self, x):
+            return self.scale * (x @ self.A @ self.B)
+
+    class LinearWithLoRA(nn.Module):
+        def __init__(self, linear, rank, alpha):
+            super().__init__()
+            self.linear = linear
+            for p in self.linear.parameters():
+                p.requires_grad = False
+            self.lora = LoRALayer(linear.in_features, linear.out_features, rank, alpha)
+
+        def forward(self, x):
+            return self.linear(x) + self.lora(x)   # W*x + delta_W*x
+
+  Forward pass: W*x + (alpha/r)*A*B*x
+  A is initialized small, B as zeros -- LoRA starts as zero modification.
+
+--- Using LoRA with HuggingFace PEFT ---
+
+  pip install peft transformers datasets
+
+  from transformers import AutoModelForCausalLM
+  from peft import LoraConfig, get_peft_model
+
+  model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+
+  lora_config = LoraConfig(
+      r=8,
+      lora_alpha=16,
+      target_modules=["q_proj", "v_proj"],
+      lora_dropout=0.05,
+      bias="none",
+      task_type="CAUSAL_LM",
+  )
+
+  model = get_peft_model(model, lora_config)
+  model.print_trainable_parameters()
+  # trainable params: ~4.2M || all params: ~6.7B || trainable%: 0.06%
+
+--- Full LoRA Training Script ---
+
+  (from your notes -- runnable as-is)
+
+  import torch
+  from transformers import AutoModelForCausalLM, AutoTokenizer
+  from peft import LoraConfig, get_peft_model, TaskType
+  from datasets import Dataset
+  from transformers import TrainingArguments, Trainer
+
+  tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+  tokenizer.pad_token = tokenizer.eos_token
+  model = AutoModelForCausalLM.from_pretrained(
+      "meta-llama/Llama-2-7b-hf",
+      torch_dtype=torch.float16,
+      device_map="auto",
+  )
+
+  lora_config = LoraConfig(r=8, lora_alpha=16,
+      target_modules=["q_proj", "v_proj"],
+      lora_dropout=0.05, bias="none", task_type=TaskType.CAUSAL_LM)
+  model = get_peft_model(model, lora_config)
+  model.print_trainable_parameters()
+
+  train_data = [{"text": "Once upon a time, there was a brave knight..."}]
+  dataset = Dataset.from_list(train_data)
+
+  def tokenize(examples):
+      return tokenizer(examples["text"], truncation=True, padding="max_length", max_length=128)
+  tokenized_dataset = dataset.map(tokenize, batched=True)
+
+  trainer = Trainer(
+      model=model,
+      args=TrainingArguments(
+          output_dir="./lora-llama2-output",
+          num_train_epochs=3,
+          per_device_train_batch_size=4,
+          learning_rate=2e-4,
+          fp16=True,
+      ),
+      train_dataset=tokenized_dataset,
+  )
+  trainer.train()
+  model.save_pretrained("./lora-llama2-adapter")
+
+================================================================================
+31. MCP (MODEL CONTEXT PROTOCOL)
+================================================================================
+
+--- What is MCP? ---
+
+  Your note: "wat is mcp?"
+
+  MCP (Model Context Protocol) is an open standard that lets LLMs
+  interact with EXTERNAL TOOLS AND DATA SOURCES in a structured way.
+
+  Think of it as "USB-C for AI" -- a universal connector that lets any
+  LLM work with any tool or data source without custom integrations.
+
+--- Architecture ---
+
+  Host/Client (OpenWork, Claude) <--> MCP Server (tools, resources, prompts)
+
+--- Three Core Decorators ---
+
+  1. @mcp.tool -- exposes a function as an ACTION the LLM can call
+     Use for: API calls, calculations, file ops, DB queries
+
+  2. @mcp.resource -- exposes READ-ONLY DATA via a URI
+     Use for: files, config, DB records
+
+  3. @mcp.prompt -- defines a reusable PROMPT TEMPLATE
+     Use for: standard workflows, guided interactions
+
+--- Key Benefits ---
+
+  - Standardization: one protocol for all tool integrations
+  - Security: host controls which MCP servers are allowed
+  - Reusability: share MCP servers across different LLM apps
+  - Simplicity: write a Python function, add a decorator, done
+
+--- MCP Servers (Examples) ---
+
+  Pre-built: Filesystem, GitHub, Database, Web, Slack, Puppeteer
+  Custom: pip install mcp && decorate your functions
+
+================================================================================
+32. AGENTIC AI & RAG COMPONENTS
+================================================================================
+# ponytail: condensed overview -- see Sections 20, 21 for full detail
+
+--- What is an AI Agent? ---
+
+  Your note:
+    "what is ai agent? an ai agent is a software program powered by an llm
+     tha can percieve->reason->act->learn"
+
+  An AI Agent is an LLM-powered system with a loop:
+    Perceive -> Reason -> Act -> Learn
+
+  Core equation (from your notes):
+    LLM (brain) -> Tools (hands) -> Memory (context) -> Planner (strategy)
+
+--- Why We Need AI Agents ---
+
+  Problems agents solve:
+    - Context Limit: agents retrieve only what's needed
+    - Static Responses: agents can call APIs, run code
+    - Tool Fragments: agents coordinate multiple tools
+    - Repetitive Work: agents automate multi-step processes
+    - Information Overload: agents filter before presenting
+
+  Use cases: customer support, code generation, research automation,
+  data analysis, DevOps, personal assistant
+
+--- RAG Components ---
+
+  Components:
+    - Embedding Model:   converts text to vectors
+    - Vector DB:         stores and searches vectors
+    - Prompt Template:   "Using this context, answer..."
+    - LLM:               generates the answer
+
+  Phases:
+    1. Query:            user asks a question
+    2. Embed & Search:   convert query to vector, search Vector DB
+    3. Build Context:    retrieved chunks + query + system prompt
+    4. Generate:         LLM reads context and answers
+
+--- Embeddings Definition ---
+
+  Your note: "embeddings-turing text into vectors / defination"
+
+  An embedding is a list of numbers (a vector) representing the MEANING
+  of text. Similar texts have similar vectors. Typical: 384-3072 dimensions.
+
+--- Vector Database Definition ---
+
+  Your note: "vectordatabases:-fast similarity search / defination"
+
+  A Vector DB stores embeddings and supports fast nearest-neighbor (ANN)
+  search. Options: Chroma, FAISS, Pinecone, Weaviate, Qdrant, pgvector.
+  All support: cosine/euclidean/dot-product, metadata, store original text.
+
+--- Retrieval Definition ---
+
+  Your note: "retrical--finding the right context / defination"
+
+  Retrieval is finding relevant document chunks for a query.
+
+  Strategies:
+    - Similarity Search:     nearest neighbors by vector distance
+    - MMR:                   balance relevance + diversity
+    - Hybrid Search:         semantic (vector) + keyword (BM25)
+    - Multi-Query:           multiple query variations
+    - Recursive Retrieval:   retrieve, then retrieve more
+
+--- Chunking ---
+
+  Your note: "chunking---splitting documents intelligently"
+
+  Splitting docs into pieces for embedding.
+    Too small: loses context
+    Too large: dilutes meaning
+
+  Strategies:
+    - Recursive Character Splitting: by newline -> period -> space
+    - Semantic Chunking: at topic boundaries
+    - Agentic Chunking: LLM decides where to split
+
+  Rule of thumb: 256-1024 tokens per chunk, 10-20% overlap.
