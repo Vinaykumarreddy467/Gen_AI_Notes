@@ -2499,3 +2499,143 @@ input when generating each word.
   # pip install dify-client
   # from dify_client import DifyClient
   # client = DifyClient("your-api-key")
+
+================================================================================
+33. LANGCHAIN DEEP DIVE
+================================================================================
+# ponytail: unified interface for 100+ LLMs, prompt templates, chains, memory, agents, RAG
+
+--- What is LangChain? ---
+
+  LangChain is an open-source framework (created by Harrison Chase, 2022, MIT)
+  for building LLM-powered applications. It provides a UNIFIED INTERFACE over
+  100+ LLM providers, prompt management, chains, memory, agents, and RAG.
+
+  Core philosophy: "LLM applications are just chains of composable components."
+
+--- Ecosystem ---
+
+  | Library        | Purpose                                                |
+  |----------------|--------------------------------------------------------|
+  | langchain-core | Framework core: models, prompts, chains, memory, RAG   |
+  | langgraph      | Stateful graph-based agent orchestration (cycles/branching) |
+  | langsmith      | Debug, test, monitor, evaluate LLM apps + Prompt Hub   |
+  | langfuse       | Open-source LLM observability (tracking, eval, cost)   |
+  | langserve      | Deploy chains as REST APIs (auto UI, streaming)        |
+
+--- #1: Models (LLMs & Chat Models) ---
+
+  Two categories:
+    LLMs:        text-in/text-out (string -> string)
+    Chat Models: conversation with system/user/assistant message roles
+
+  Supported: OpenAI, Anthropic, Google, Cohere, HuggingFace, Ollama, Azure, Bedrock...
+
+  Common params: temperature, max_tokens, top_p, stop_sequences
+  Supports: streaming, async, batch, function/tool calling
+
+  # Basic chat model (your completed example)
+  from langchain_openai import ChatOpenAI
+
+  llm = ChatOpenAI(model="gpt-4", temperature=0.7)
+  response = llm.invoke("Explain LoRA in one sentence")
+  # "LoRA fine-tunes large models by training small adapter matrices instead of all parameters."
+
+  # With messages
+  from langchain_core.messages import HumanMessage, SystemMessage
+  messages = [
+      SystemMessage("You are a helpful AI tutor"),
+      HumanMessage("What is QLoRA?"),
+  ]
+  print(llm.invoke(messages).content)
+
+--- #2: Prompts & Prompt Templates ---
+
+  Components:
+    PromptTemplate:           parameterized string template
+    ChatPromptTemplate:       structured message template (system/human/ai roles)
+    FewShotPromptTemplate:    few-shot learning examples baked in
+    PipelinePromptTemplate:   compose multiple prompts together
+    MessagesPlaceholder:      dynamic message injection (e.g., chat history)
+
+  Best practices: be specific, provide context, use examples, format constraints,
+  define output structure.
+
+  # PromptTemplate example
+  from langchain_core.prompts import PromptTemplate
+
+  template = PromptTemplate.from_template(
+      "Explain {topic} as if I'm a {audience}. Use {num_examples} examples."
+  )
+  prompt = template.invoke({"topic": "LoRA", "audience": "5-year-old", "num_examples": 2})
+  # "Explain LoRA as if I'm a 5-year-old. Use 2 examples."
+
+  # ChatPromptTemplate with roles
+  from langchain_core.prompts import ChatPromptTemplate
+
+  chat_template = ChatPromptTemplate.from_messages([
+      ("system", "You are a {role} expert. Answer concisely."),
+      ("human", "{question}"),
+  ])
+  prompt = chat_template.invoke({"role": "GenAI", "question": "What is QLoRA?"})
+
+--- #3: Output Parsers ---
+
+  Parsers turn unstructured LLM text into structured data:
+
+    PydanticOutputParser:           JSON with Pydantic validation
+    CommaSeparatedListOutputParser: "a, b, c" -> ["a", "b", "c"]
+    JsonOutputParser:               raw JSON parsing
+    StructuredOutputParser:         dict with typed fields
+    DateTimeOutputParser:           date/time string -> datetime
+    EnumOutputParser:               string -> Enum
+    OutputFixingParser:             auto-fix malformed output (retry with error msg)
+
+  # Pydantic parser example
+  from langchain_core.prompts import PromptTemplate
+  from langchain_core.output_parsers import PydanticOutputParser
+  from pydantic import BaseModel, Field
+
+  class StudyNote(BaseModel):
+      topic: str = Field(description="topic name")
+      summary: str = Field(description="one-line summary")
+      difficulty: int = Field(description="difficulty 1-5")
+
+  parser = PydanticOutputParser(pydantic_object=StudyNote)
+  prompt = PromptTemplate(
+      template="Generate a study note about {topic}.\n{format_instructions}",
+      partial_variables={"format_instructions": parser.get_format_instructions()},
+  )
+  # chain = prompt | llm | parser
+  # result = chain.invoke({"topic": "LoRA"})  # returns a StudyNote object
+
+--- #4: Chains & LCEL (LangChain Expression Language) ---
+
+  Chains = sequences of calls: LLM -> parser -> tool -> LLM -> ...
+
+  LCEL uses the | (pipe) operator to compose chains:
+    chain = prompt | model | parser
+    # Automatic: streaming, async, batch, retry, fallbacks
+
+  Chain types:
+    LLMChain:            prompt -> model -> parser
+    SequentialChain:     multiple steps in sequence (output of step 1 -> input of step 2)
+    RouterChain:         route input to specialized chains
+    RunnablePassthrough: pass data through unchanged (for side-effects or debugging)
+    RunnableParallel:    run branches in parallel (merge results)
+
+  # Simple chain with LCEL
+  from langchain_core.output_parsers import StrOutputParser
+
+  chain = ChatPromptTemplate.from_template("Explain {topic} in one line") | llm | StrOutputParser()
+  print(chain.invoke({"topic": "QLoRA"}))
+  # "QLoRA loads the base model in 4-bit, cutting VRAM by 4x with only ~1% quality loss."
+
+  # Parallel chain (two questions at once)
+  from langchain_core.runnables import RunnableParallel
+
+  chain1 = ChatPromptTemplate.from_template("Explain {topic}") | llm | StrOutputParser()
+  chain2 = ChatPromptTemplate.from_template("Give an example of {topic}") | llm | StrOutputParser()
+  parallel = RunnableParallel(explanation=chain1, example=chain2)
+  result = parallel.invoke({"topic": "LoRA"})
+  # result["explanation"] = "...", result["example"] = "..."
