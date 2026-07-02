@@ -1865,8 +1865,8 @@ input when generating each word.
 
   Your note:
     when model outputs a raw scope for every date token we call this score
-    as LOGIT
-    these LOGITs are jsut raw, uncalibrated numbers, they cannot
+	as LOGIT
+    these LOGITs are just raw, not calibrated numbers, they cannot
 
     example:
       the cat sat on the
@@ -2247,3 +2247,48 @@ input when generating each word.
     - Agentic Chunking: LLM decides where to split
 
   Rule of thumb: 256-1024 tokens per chunk, 10-20% overlap.
+
+--- AI Agent Frameworks Comparison ---
+
+  | Framework      | Language   | Best For                                      |
+  |----------------|------------|-----------------------------------------------|
+  | LangChain      | Python     | General agent & RAG pipelines                 |
+  | LangGraph      | Python     | Stateful multi-agent workflows (graphs)       |
+  | CrewAI         | Python     | Role-based multi-agent collaboration          |
+  | LlamaIndex     | Python     | Data indexing & retrieval for RAG             |
+  | AutoGen        | Python     | Multi-agent conversations & automation        |
+  | Dify           | Python     | Low-code LLM app platform (visual builder)    |
+
+--- Hands-On: Quick Examples ---
+
+  # LangChain: simple RAG chain
+  from langchain_core.prompts import ChatPromptTemplate
+  from langchain_openai import ChatOpenAI
+  prompt = ChatPromptTemplate.from_template("Answer using: {context}\nQ: {q}")
+  chain = prompt | ChatOpenAI()
+  # chain.invoke({"context": "...", "q": "your question"})
+
+  # CrewAI: two agents collaborate
+  from crewai import Agent, Task, Crew
+  writer = Agent(role="Writer", goal="Write content", backstory="I write.", llm="gpt-4")
+  editor = Agent(role="Editor", goal="Polish content", backstory="I edit.", llm="gpt-4")
+  task = Task(description="Write about AI", agent=writer)
+  crew = Crew(agents=[writer, editor], tasks=[task])
+  # crew.kickoff()
+
+  # LlamaIndex: query documents
+  from llama_index.core import VectorStoreIndex, SimpleDirectoryReader
+  docs = SimpleDirectoryReader("./docs").load_data()
+  index = VectorStoreIndex.from_documents(docs)
+  # index.as_query_engine().query("your question")
+
+  # AutoGen: two-agent chat
+  from autogen import AssistantAgent, UserProxyAgent
+  assistant = AssistantAgent("assistant", llm_config={"config_list": [{"model": "gpt-4"}]})
+  user = UserProxyAgent("user", code_execution_config={"work_dir": "coding"})
+  # user.initiate_chat(assistant, message="Write a Python script")
+
+  # Dify: uses visual builder (drag-and-drop), SDK for programmatic access
+  # pip install dify-client
+  # from dify_client import DifyClient
+  # client = DifyClient("your-api-key")
