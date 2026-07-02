@@ -2694,3 +2694,72 @@ input when generating each word.
   agent = create_tool_calling_agent(llm, tools, prompt)
   executor = AgentExecutor(agent=agent, tools=tools)
   executor.invoke({"input": "What is 7 times 8?"})
+
+--- #7: RAG (Retrieval-Augmented Generation) in LangChain ---
+
+  RAG = Retrieve relevant docs -> feed as context -> LLM answers from that context.
+
+  Pipeline:
+    Load documents -> Split into chunks -> Embed chunks -> Store in Vector DB
+    -> Retrieve relevant chunk -> Feed context + question to LLM -> QA chain
+
+  Key advantage: ground LLM responses in YOUR data, reduce hallucinations.
+
+  # Complete RAG chain in LangChain
+  from langchain_community.document_loaders import TextLoader
+  from langchain.text_splitter import RecursiveCharacterTextSplitter
+  from langchain_community.vectorstores import Chroma
+  from langchain_openai import OpenAIEmbeddings
+  from langchain.chains import RetrievalQA
+
+  loader = TextLoader("./my_doc.txt")                       # load
+  docs = loader.load()
+  splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
+  chunks = splitter.split_documents(docs)                   # split
+  db = Chroma.from_documents(chunks, OpenAIEmbeddings())    # embed + store
+  qa = RetrievalQA.from_chain_type(llm=llm, retriever=db.as_retriever())
+  qa.invoke("What does this document say about LoRA?")      # retrieve + answer
+
+--- #8: LangGraph (Stateful Multi-Actor Orchestration) ---
+
+  LangGraph extends LangChain for building STATEFUL, multi-actor apps.
+  Workflows defined as a StateGraph: nodes + edges with state flowing between them.
+
+  Core concepts:
+    StateGraph:    define workflow as nodes and edges
+    Nodes:        Python functions, tools, or decision points
+    Edges:        connect nodes (conditional or fixed)
+    State:        shared state that flows through the graph
+    Cycles:       loops (agents can retry, refine, re-prompt)
+
+  Use cases: multi-agent teams, human-in-the-loop, conversational agents
+  with memory, data extraction pipelines.
+
+  # Minimal LangGraph agent (pseudocode concept)
+  from langgraph.graph import StateGraph
+
+  # graph = StateGraph(MyState)
+  # graph.add_node("call_llm", call_llm)
+  # graph.add_node("call_tool", call_tool)
+  # graph.add_edge("start", "call_llm")
+  # graph.add_conditional_edges("call_llm", should_continue, {True: "call_tool", False: "end"})
+  # app = graph.compile()
+  # app.invoke({"messages": ["What is 7*8?"]})
+
+--- #9: LangSmith (LLM App Lifecycle Platform) ---
+
+  LangSmith is a platform for the full LLM app lifecycle: debug, test,
+  monitor, evaluate, and manage prompts.
+
+  Key features:
+    Tracing:      see every LLM call, tool use, and retriever step
+    Evaluation:   run datasets through chains, score outputs
+    Hub:          version-controlled prompt management & sharing
+    Monitoring:   latency, cost, error rates in production
+    Annotation:   human feedback on LLM outputs
+    Testing:      regression tests with curated datasets
+
+  Setup:
+    export LANGCHAIN_API_KEY="your-key"
+    export LANGCHAIN_PROJECT="my-project"
+    export LANGCHAIN_TRACING_V2=true
