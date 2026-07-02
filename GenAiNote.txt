@@ -2639,3 +2639,58 @@ input when generating each word.
   parallel = RunnableParallel(explanation=chain1, example=chain2)
   result = parallel.invoke({"topic": "LoRA"})
   # result["explanation"] = "...", result["example"] = "..."
+
+--- #5: Memory ---
+
+  Memory lets your LLM app remember past conversation — chat history,
+  state persistence across turns.
+
+  Types (from your notes):
+    ConversationBufferMemory:         stores ENTIRE history (grows unbounded)
+    ConversationBufferWindowMemory:   last K turns only (fixed window size)
+    ConversationSummaryMemory:        periodically summarizes old messages
+    ConversationSummaryBufferMemory:  hybrid = summary of old + recent verbatim
+    VectorStoreRetrieverMemory:       retrieves relevant memories by similarity
+    ZepMemory:                        long-term persistent memory (uses Zep server)
+
+  # Buffer memory example
+  from langchain.memory import ConversationBufferMemory
+  from langchain.chains import ConversationChain
+
+  memory = ConversationBufferMemory()
+  chain = ConversationChain(llm=llm, memory=memory)
+  chain.predict(input="Hi I'm Mike")    # stores in memory
+  chain.predict(input="What's my name?") # retrieves "Mike" from memory
+
+--- #6: Agents & Tools ---
+
+  Agents = LLMs that DECIDE which tools to call, in what order, with what args.
+
+  Three components:
+    - Tool:      function the agent can invoke (search, calculator, API, code exec)
+    - Agent:     the LLM that reasons about which tool to use
+    - Executor:  runs the agent-tool loop (think -> act -> observe -> repeat)
+
+  Agent types:
+    Tool-Calling Agent:      LLM natively supports function/tool calling (GPT-4, Claude)
+    ReAct Agent:             Reason + Act loop (thought -> action -> observation)
+    Plan-and-Execute Agent:  first plan all steps, then execute each one
+
+  # Tool-calling agent example
+  from langchain.agents import create_tool_calling_agent, AgentExecutor
+  from langchain.tools import tool
+
+  @tool
+  def multiply(a: int, b: int) -> int:
+      """Multiply two numbers."""
+      return a * b
+
+  tools = [multiply]
+  prompt = ChatPromptTemplate.from_messages([
+      ("system", "You are a helpful assistant"),
+      ("human", "{input}"),
+      ("placeholder", "{agent_scratchpad}"),
+  ])
+  agent = create_tool_calling_agent(llm, tools, prompt)
+  executor = AgentExecutor(agent=agent, tools=tools)
+  executor.invoke({"input": "What is 7 times 8?"})
