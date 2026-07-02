@@ -2033,12 +2033,32 @@ input when generating each word.
     class LoRALayer(nn.Module):
         def __init__(self, in_dim, out_dim, rank, alpha):
             super().__init__()
+            # rank (r): the bottleneck dimension for the low-rank matrices.
+            #   r=8: typical default. Each weight update is factorized into
+            #   A: (in_dim x r) and B: (r x out_dim) instead of (in_dim x out_dim).
+            #   Smaller r = fewer params, less adaptation. Larger r = more params, more adaptation.
+            # alpha: scaling factor. The update gets multiplied by alpha/r.
+            #   alpha=16 with r=8 gives scale=2. Higher alpha = stronger adaptation.
             self.A = nn.Parameter(torch.randn(in_dim, rank) * 0.01)
+            # A: random small values (std=0.01). This is the "down-projection" — compresses input to rank.
             self.B = nn.Parameter(torch.zeros(rank, out_dim))
+            # B: initialized to zeros. This is the "up-projection" — expands back to output dim.
+            #    Starting B as zeros means LoRA adds NOTHING at first (delta_W = 0).
+            #    Only gradients flow into A and B, not the frozen base weights.
             self.scale = alpha / rank
+            # scale = alpha/r controls how much the LoRA path contributes.
+            #   alpha=16, r=8  -> scale=2   (moderate adaptation)
+            #   alpha=64, r=8  -> scale=8   (strong adaptation)
+            #   alpha=8,  r=8  -> scale=1   (weak adaptation)
+            # Rule: start alpha=16 for r=8. Increase if underfitting, decrease if overfitting.
 
         def forward(self, x):
+            # Forward: scale * (x @ A @ B)
+            # This equals scale * (x @ delta_W) where delta_W = A @ B
             return self.scale * (x @ self.A @ self.B)
+            # x @ A: project input down to rank dimensions (compression)
+            # (x @ A) @ B: project back up to output dimensions (expansion)
+            # scale * result: apply the adaptation strength
 
     class LinearWithLoRA(nn.Module):
         def __init__(self, linear, rank, alpha):
@@ -2046,13 +2066,21 @@ input when generating each word.
             self.linear = linear
             for p in self.linear.parameters():
                 p.requires_grad = False
+                # Freeze the original linear layer — no gradients flow here.
+                # Only the LoRA adapter (A and B matrices) gets trained.
+                # This is why LoRA uses ~0.1% of the params vs full fine-tune.
             self.lora = LoRALayer(linear.in_features, linear.out_features, rank, alpha)
+            # The LoRA adapter mirrors the linear layer's dimensions.
+            # in_features -> rank -> out_features (bottleneck)
 
         def forward(self, x):
+            # Combined forward: original_output + adapter_output
+            # = W*x + (alpha/r) * (x @ A @ B)
             return self.linear(x) + self.lora(x)   # W*x + delta_W*x
 
   Forward pass: W*x + (alpha/r)*A*B*x
-  A is initialized small, B as zeros -- LoRA starts as zero modification.
+  A is initialized small (randn*0.01), B as zeros → delta_W = A@B = 0 at start.
+  Training only updates A and B. The original W stays frozen.
 
 --- Using LoRA with HuggingFace PEFT ---
 
@@ -2064,17 +2092,62 @@ input when generating each word.
   model = AutoModelForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
 
   lora_config = LoraConfig(
+      # r (rank): the bottleneck dimension for low-rank decomposition.
+      #   rank=8 means each adaptor matrix is (dim x 8) and (8 x dim).
+      #   Why 8? It's the sweet spot: enough capacity to learn task-specific patterns,
+      #   small enough to keep trainable params ~0.1% of total.
+      #   Think of r as the "width of the information channel" for adaptation.
       r=8,
+
+      # lora_alpha: scaling factor for the LoRA update.
+      #   The actual update is: scale * A @ B  where scale = alpha / r.
+      #   With alpha=16 and r=8: scale = 2. The LoRA path is amplified 2x.
+      #   Why 16? Empirically works well as 2x the rank. Most papers use 8-32.
+      #   Higher alpha = more aggressive adaptation (use if task is very different from pretraining).
+      #   Lower alpha = more conservative (use for similar tasks to avoid catastrophic forgetting).
       lora_alpha=16,
+
+      # target_modules: which linear layers in the transformer get LoRA adaptors.
+      #   ["q_proj", "v_proj"] means ONLY the Query and Value projection matrices
+      #   in each attention head get adapted. This is the most common and efficient choice.
+      #   Why Q and V? Research shows adapting just Q and V captures most task-specific
+      #   patterns while being parameter-efficient.
+      #   Other options:
+      #     ["q_proj", "k_proj", "v_proj", "o_proj"] — all attention (more params, more expressive)
+      #     ["q_proj", "v_proj", "gate_proj", "up_proj", "down_proj"] — attention + FFN (full fine-tune)
+      #   Rule: start with Q,V. Add K,O if underfitting. Add FFN if still underfitting.
       target_modules=["q_proj", "v_proj"],
+
+      # lora_dropout: dropout rate applied to the LoRA adapter output.
+      #   0.05 = 5% dropout. Helps prevent overfitting when fine-tuning on small datasets.
+      #   Higher dropout (0.1-0.2) for very small datasets (<1000 examples).
+      #   Lower dropout (0.0-0.05) for large datasets (>10000 examples).
+      #   Why dropout on LoRA? Since LoRA has very few params, even 5% dropout provides
+      #   meaningful regularization.
       lora_dropout=0.05,
+
+      # bias: how to handle bias parameters during LoRA training.
+      #   "none" = don't train bias terms at all (most efficient, recommended).
+      #   "lora_only" = train only biases that belong to LoRA layers.
+      #   "all" = train all bias parameters (defeats the purpose of LoRA efficiency).
+      #   Why "none"? Biases are a tiny fraction of total params (~0.001%) and
+      #   training them adds complexity with minimal benefit.
       bias="none",
+
+      # task_type: what kind of model you're fine-tuning.
+      #   CAUSAL_LM: causal language model (GPT, Llama, Mistral, Qwen) — predicts next token
+      #   SEQ_CLS: sequence classification (BERT, RoBERTa) — classifies entire input
+      #   SEQ2SEQ_LM: encoder-decoder (T5, BART) — sequence-to-sequence generation
+      #   Why CAUSAL_LM? Llama-2 is a causal/decoder-only model. This tells PEFT to
+      #   add LoRA adaptors to the correct layers for next-token prediction.
       task_type="CAUSAL_LM",
   )
 
   model = get_peft_model(model, lora_config)
   model.print_trainable_parameters()
   # trainable params: ~4.2M || all params: ~6.7B || trainable%: 0.06%
+  # 4.2 million trainable out of 6.7 billion = only 0.06% of the model is being trained.
+  # This is the entire point of LoRA — you can fine-tune a 7B model on a single GPU.
 
 --- Full LoRA Training Script ---
 
@@ -2094,6 +2167,15 @@ input when generating each word.
       device_map="auto",
   )
 
+  # r=8: bottleneck dim. 8 is the default sweet spot (enough capacity, minimal params).
+  # lora_alpha=16: scale = 16/8 = 2. Controls how strongly LoRA adapts.
+  # target_modules=["q_proj","v_proj"]: only Query & Value projections get adaptors.
+  #   q_proj = the "what to attend to" weights in attention.
+  #   v_proj = the "what information to carry" weights in attention.
+  #   Together: LoRA learns better what to focus on (Q) and what to remember (V).
+  # lora_dropout=0.05: 5% dropout for regularization on small datasets.
+  # bias="none": don't train bias terms (tiny params, negligible benefit).
+  # task_type=TaskType.CAUSAL_LM: tells PEFT this is a next-token prediction model.
   lora_config = LoraConfig(r=8, lora_alpha=16,
       target_modules=["q_proj", "v_proj"],
       lora_dropout=0.05, bias="none", task_type=TaskType.CAUSAL_LM)
