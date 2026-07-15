@@ -3257,6 +3257,29 @@ input when generating each word.
     Multimodal Models:          GPT-4V, Claude 3 (text + images)
     Small Models:               Phi-3, Llama-3-8B (edge deployment)
 
+  --- Q: What's the difference between LLMs and ChatModels? ---
+
+    This is a LangChain-specific distinction. In everyday conversation both are
+    called "LLMs", but LangChain has TWO different classes:
+
+    | Aspect           | LLM (LangChain)           | ChatModel (LangChain)         |
+    |------------------|---------------------------|--------------------------------|
+    | Input            | Plain string              | List of messages with roles    |
+    | Output           | Plain string              | AIMessage object (.content)    |
+    | Message roles    | None                      | system, human, ai, tool        |
+    | System prompt    | Prepend to string manually| SystemMessage                  |
+    | Multi-turn       | Manual concatenation      | Pass message history           |
+    | Tool calling     | ❌ Not supported          | ✅ .bind_tools()               |
+    | Structured output| ❌ Not supported          | ✅ .with_structured_output()   |
+    | API endpoint     | /completions (legacy)     | /chat/completions (modern)     |
+    | Import           | langchain_openai.OpenAI   | langchain_openai.ChatOpenAI    |
+
+    Bottom line: Always use ChatModel. It's the modern standard.
+    The LLM class exists only for legacy compatibility with old endpoints
+    like gpt-3.5-turbo-instruct.
+
+    See Section 33 #1 for detailed code examples.
+
   --- Q: Difference between LLM and Embedding Model ---
 
     LLM (Generative):
@@ -3299,6 +3322,7 @@ input when generating each word.
 
     Contextual Compression:
       # Retrieves docs, then compresses/reranks them to keep only relevant parts
+
 
 ---
 
