@@ -2813,54 +2813,269 @@ input when generating each word.
 ================================================================================
 # ponytail: know your errors before they bite you
 
-  --- Common HTTP Error Codes in GenAI Projects ---
+  --- HTTP Error Codes — Full Reference ---
 
-    200:  Success
-    400:  Bad Request (malformed prompt, invalid params)
-    401:  Unauthorized (invalid or missing API key)
-    403:  Forbidden (no access to that model)
-    404:  Not Found (wrong endpoint URL)
-    429:  Rate Limit Exceeded (too many requests — back off!)
-    500:  Internal Server Error (provider-side issue, retry later)
-    502:  Bad Gateway (upstream outage)
-    503:  Service Unavailable (overloaded, retry with backoff)
-    504:  Gateway Timeout (response too slow)
+    | Code | Name              | Meaning                                                | Retry? |
+    |------|-------------------|--------------------------------------------------------|--------|
+    | 200  | OK                | Success (or 201 for creation)                          | No     |
+    | 400  | Bad Request       | Malformed prompt, invalid params, unsupported model    | No     |
+    | 401  | Unauthorized      | Invalid, missing, or revoked API key                   | No     |
+    | 403  | Forbidden         | No access to that model/endpoint (billing, geo, quota) | No     |
+    | 404  | Not Found         | Wrong endpoint URL or model name                       | No     |
+    | 405  | Method Not Allowed| Wrong HTTP method (e.g., GET instead of POST)          | No     |
+    | 408  | Request Timeout   | Request took too long before sending                   | Yes    |
+    | 409  | Conflict          | Resource state conflict (rare in LLM APIs)             | Maybe  |
+    | 413  | Payload Too Large | Prompt + context exceeds max size (reduce tokens)      | No     |
+    | 415  | Unsupported Media | Wrong Content-Type header (must be application/json)   | No     |
+    | 422  | Unprocessable     | Semantic error in request (bad schema, invalid field)  | No     |
+    | 429  | Rate Limited      | Too many requests in time window — BACK OFF!           | Yes    |
+    | 500  | Internal Error    | Provider-side failure (server crash, bug)              | Yes    |
+    | 502  | Bad Gateway       | Upstream service is down (network, load balancer)      | Yes    |
+    | 503  | Service Unavail.  | Overloaded — server is shedding load                   | Yes    |
+    | 504  | Gateway Timeout   | Upstream didn't respond in time (model too slow)       | Yes    |
+    | 507  | Insufficient      | Provider has no capacity (GPU shortage)                | Maybe  |
+    | 529  | Overloaded        | Provider-specific: too many requests (like 429)        | Yes    |
 
-  --- Handling 429 (Rate Limit) ---
+  --- LLM-Specific Error Codes (by Provider) ---
 
-    import time, random
+    --- OpenAI Error Codes ---
 
-    def call_with_retry(llm, prompt, max_retries=3):
-        for attempt in range(max_retries):
-            try:
-                return llm.invoke(prompt)
-            except Exception as e:
-                if "429" in str(e):
-                    wait = 2 ** attempt + random.uniform(0, 1)
-                    print(f"Rate limited. Retrying in {wait:.1f}s...")
-                    time.sleep(wait)
-                else:
-                    raise
-        raise Exception("Max retries exceeded")
+      Error type (from OpenAI's error object: `error.type` or `error.code`):
 
-  --- JSON Dumps & Parsing Errors ---
+      | error.code              | What it means                                      | Fix                                                 |
+      |-------------------------|----------------------------------------------------|-----------------------------------------------------|
+      | invalid_request_error   | Malformed request, bad params, unsupported model   | Check your request format                           |
+      | authentication_error    | API key invalid, revoked, or missing               | Check OPENAI_API_KEY                                |
+      | rate_limit_error        | Too many requests (RPM/TPM exceeded)               | Retry with exponential backoff                      |
+      | insufficient_quota      | You ran out of credits / billing limit hit         | Add payment method or wait for reset                |
+      | context_length_exceeded | Prompt + max_tokens > model's max context window   | Truncate prompt, reduce max_tokens, use a larger model |
+      | server_error            | OpenAI's servers had a problem                     | Retry with backoff                                  |
+      | content_filter          | Prompt or response flagged by moderation system    | Rephrase prompt, check safety guidelines            |
+      | model_not_available     | Model is down, deprecated, or not deployed         | Switch to another model                             |
+      | timeout                 | Request took too long to complete                  | Retry or reduce max_tokens                          |
+      | engine_error            | Model failed to load or crashed                    | Retry                                               |
+      | exceeded_quota          | Free tier limit reached for the month              | Upgrade to paid tier                                |
 
-    LLMs often return malformed JSON. Always use OutputFixingParser:
+      # OpenAI error handling pattern
+      from openai import RateLimitError, APITimeoutError, APIConnectionError, BadRequestError
 
-    from langchain.output_parsers import OutputFixingParser
-    from langchain_core.output_parsers import JsonOutputParser
+      try:
+          response = client.chat.completions.create(model="gpt-4", messages=[...])
+      except RateLimitError:
+          # 429 — retry with backoff
+      except BadRequestError as e:
+          if "context_length_exceeded" in str(e):
+              # reduce tokens
+          elif "content_filter" in str(e):
+              # rephrase prompt
+      except APITimeoutError:
+          # 504 — retry
+      except APIConnectionError:
+          # network issue
+
+    --- Anthropic Error Codes ---
+
+      | error.type              | What it means                                      | Fix                                                 |
+      |-------------------------|----------------------------------------------------|-----------------------------------------------------|
+      | invalid_request_error   | Bad request format, unsupported model              | Check Anthropic docs                                |
+      | authentication_error    | Invalid x-api-key header                           | Check ANTHROPIC_API_KEY                             |
+      | permission_error        | No access to requested model                       | Request access or switch model                      |
+      | not_found_error         | Wrong endpoint or model name                       | Check URL and model name                            |
+      | rate_limit_error        | Too many requests (RPM exceeded)                   | Back off and retry                                  |
+      | api_error               | Server-side failure                                | Retry                                               |
+      | overloaded_error        | Server overloaded (Anthropic-specific 529)         | Retry with backoff                                  |
+
+    --- Google (Gemini) Error Codes ---
+
+      | error.status            | What it means                                      | Fix                                                 |
+      |-------------------------|----------------------------------------------------|-----------------------------------------------------|
+      | INVALID_ARGUMENT        | Bad request, unsupported model                     | Check request format                                |
+      | FAILED_PRECONDITION     | Model not available in your region                 | Switch region or model                              |
+      | PERMISSION_DENIED       | API key not enabled for this API                   | Enable in Google Cloud Console                      |
+      | UNAUTHENTICATED         | Invalid/missing API key                            | Check API key                                       |
+      | RESOURCE_EXHAUSTED      | Free tier quota exceeded (60 req/min)              | Wait or upgrade                                     |
+      | UNAVAILABLE             | Service temporarily down                           | Retry                                               |
+      | DEADLINE_EXCEEDED       | Request timed out (10s default)                    | Increase timeout or reduce tokens                   |
+      | INTERNAL                | Google internal error                              | Retry                                               |
+      | ABORTED                 | Request cancelled (rare)                           | Retry                                               |
+
+    --- HuggingFace / Together / Other APIs ---
+
+      Most follow OpenAI-style errors. Common ones:
+      - 402: Payment Required (out of credits)
+      - 413: Content too large (model has a smaller context than your input)
+      - 424: Dependency failed (model file not ready on first load)
+      - 499: Client closed request (user cancelled mid-stream)
+
+  --- Context Length Errors (The Most Common LLM Error) ---
+
+    Error message examples:
+      OpenAI:  "This model's maximum context length is 8192 tokens..."
+      Claude:  "prompt: ... tokens exceeds maximum context length of 100000"
+      Gemini:  "Request payload size exceeds the limit"
+
+    Context windows by model:
+      Model                  | Max tokens | Use case
+      -----------------------|------------|-------------------------------
+      GPT-3.5-turbo          | 16,384     | Simple Q&A, short docs
+      GPT-4o                 | 128,000    | Long docs, multi-turn
+      GPT-4-turbo            | 128,000    | Long context, high precision
+      Claude 3.5 Sonnet      | 200,000    | Book-length documents
+      Claude 3 Opus          | 200,000    | Very long analysis
+      Gemini 1.5 Pro         | 2,000,000  | Massive docs, codebases
+      Llama 3.1 405B         | 128,000    | Open-source, long context
+      Mistral Large          | 128,000    | Open-weight, European host
+
+    How to fix "context length exceeded":
+
+      # 1. Truncate the middle
+      def truncate_middle(text, max_tokens=100000, tokenizer_fn=None):
+          tokens = tokenizer_fn.encode(text) if tokenizer_fn else text.split()
+          if len(tokens) <= max_tokens:
+              return text
+          head = tokens[:max_tokens // 2]
+          tail = tokens[-(max_tokens // 2):]
+          return tokenizer_fn.decode(head) + "\n...[truncated]...\n" + tokenizer_fn.decode(tail)
+
+      # 2. Use a model with larger context window (e.g., switch from gpt-4 to gpt-4o)
+      # 3. Reduce max_tokens in your request
+      # 4. Split input into chunks and process separately (map-reduce)
+
+  --- Content Moderation / Safety Errors ---
+
+    "Your request was rejected as a result of our safety system."
+
+    Triggers:
+      - Violence/hate speech in prompt
+      - Jailbreak attempts
+      - Self-harm or harmful code generation
+      - Personally identifiable information (PII) leakage
+
+    Solutions:
+      1. Rephrase the prompt to be neutral/academic
+      2. Add system prompt: "Provide educational explanations only"
+      3. Use a model with relaxed filters (e.g., use OpenAI API instead of playground)
+      4. Split risky content — ask about parts separately
+
+  --- Token Limit Errors in Embeddings ---
+
+    Embedding models have strict input limits:
+      text-embedding-3-small:   8192 tokens per input
+      text-embedding-3-large:   8192 tokens per input
+      ada-002:                  8192 tokens per input
+
+    Fix: chunk your text before embedding
+      def safe_embed(text, embedding_model, max_tokens=8000):
+          tokens = count_tokens(text)  # using tiktoken
+          if tokens > max_tokens:
+              chunks = split_text(text, max_tokens)
+              embeddings = [embedding_model.embed_query(chunk) for chunk in chunks]
+              return mean_pool(embeddings)  # average all chunk embeddings
+          return embedding_model.embed_query(text)
+
+  --- Network & Connection Errors ---
+
+    | Error                        | Cause                                       | Fix                                   |
+    |------------------------------|---------------------------------------------|---------------------------------------|
+    | ConnectionError              | DNS failure, network down                   | Check internet, retry                 |
+    | TimeoutError                 | Request exceeded timeout                    | Increase timeout, reduce tokens        |
+    | SSLError / SSL verification  | Certificate issue (corporate proxy, MITM)   | Check SSL certs, disable verify in dev|
+    | ProxyError                   | Corporate proxy blocking                    | Set HTTP_PROXY / HTTPS_PROXY          |
+    | ChunkedEncodingError         | Connection dropped mid-stream               | Retry, use smaller batch              |
+
+  --- JSON Parsing & Structured Output Errors ---
+
+    LLMs often return malformed JSON. Three layers of defense:
+
+    # Layer 1: OutputFixingParser (auto-correct via LLM)
+    from langchain.output_parsers import OutputFixingParser, JsonOutputParser
 
     parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
-    # Auto-fixes: feeds bad JSON + error message back to LLM to fix it
+    # Feeds bad JSON + error message back to LLM to fix it
 
-  --- Generators for Streaming ---
+    # Layer 2: RetryWithErrorOutputParser (retry with error feedback)
+    from langchain.output_parsers import RetryWithErrorOutputParser
 
-    def stream_response(llm, prompt):
-        for chunk in llm.stream(prompt):
-            yield chunk.content  # yields tokens one by one
+    parser = RetryWithErrorOutputParser.from_llm(parser=JsonOutputParser(), llm=llm)
 
-    for token in stream_response(llm, "Write a story"):
-        print(token, end="", flush=True)
+    # Layer 3: Manual fallback (regex extraction)
+    import re, json
+
+    def extract_json(text):
+        # Try to find JSON block in the response
+        match = re.search(r'\{.*\}|\[.*\]', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group())
+            except json.JSONDecodeError:
+                return {"raw": text}  # fallback
+        return {"raw": text}
+
+  --- Streaming Errors ---
+
+    Common issues:
+      1. Connection drops mid-stream — catch GeneratorExit or ChunkedEncodingError
+      2. Content filtered mid-stream — provider returns error chunk
+      3. Timeout on long generations — set stream_options={"include_usage": True}
+
+    def safe_stream(llm, prompt, max_retries=2):
+        for attempt in range(max_retries):
+            try:
+                for chunk in llm.stream(prompt):
+                    if chunk.choices[0].finish_reason == "stop":
+                        return
+                    yield chunk.content
+                return  # complete
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    print(f"Stream error, retrying... {e}")
+                    continue
+                raise
+
+  --- Universal Retry Wrapper (handles ALL error types) ---
+
+    import time, random
+    from openai import RateLimitError, APITimeoutError, APIConnectionError, InternalServerError
+
+    def call_with_full_retry(func, max_retries=5):
+        """Universal retry wrapper for all GenAI API calls."""
+        for attempt in range(max_retries):
+            try:
+                return func()
+            except (RateLimitError, InternalServerError) as e:
+                # 429 or 500 — retry with exponential backoff + jitter
+                wait = 2 ** attempt + random.uniform(0, 2)
+                print(f"Retry {attempt+1}/{max_retries} after {wait:.1f}s: {e}")
+                time.sleep(wait)
+            except APITimeoutError:
+                # 504 — shorter backoff
+                time.sleep(1 + random.uniform(0, 1))
+            except APIConnectionError:
+                # network — longer backoff
+                time.sleep(5 + random.uniform(0, 3))
+            except BadRequestError as e:
+                # 400 — DON'T retry on bad requests
+                raise ValueError(f"Bad request — fix your input: {e}")
+        raise RuntimeError("Max retries exceeded")
+
+    # Usage
+    result = call_with_full_retry(
+        lambda: client.chat.completions.create(model="gpt-4", messages=[...])
+    )
+
+  --- Quick Reference: What to Do for Each Error ---
+
+    | Symptom                    | Likely Cause            | Action                                    |
+    |----------------------------|-------------------------|-------------------------------------------|
+    | "401"                      | API key wrong/expired   | Check env variable, regenerate key        |
+    | "429" or "529"             | Rate limited            | Wait + retry with backoff                 |
+    | "context_length_exceeded"  | Input too long          | Truncate, switch to bigger model          |
+    | "content_filter"           | Safety trigger          | Rephrase prompt, add system instructions  |
+    | "insufficient_quota"       | Out of credits          | Check billing, add payment                |
+    | "timeout" or "504"         | Response too slow       | Reduce max_tokens, upgrade model          |
+    | "model_not_found"          | Wrong model name        | Check provider docs for exact name        |
+    | "connection error"         | Network/proxy down      | Check internet, proxy settings            |
+    | Malformed JSON             | LLM returned bad JSON   | Use OutputFixingParser, add format prompt |
 
 ================================================================================
 36. GENAI AUTOMATION & TRIGGERS
