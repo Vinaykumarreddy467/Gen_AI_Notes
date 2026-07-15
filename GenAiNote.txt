@@ -2764,3 +2764,220 @@ input when generating each word.
     export LANGCHAIN_API_KEY="your-key"
     export LANGCHAIN_PROJECT="my-project"
     export LANGCHAIN_TRACING_V2=true
+
+================================================================================
+34. AGENTIC AI DESIGN PATTERNS
+================================================================================
+# ponytail: four fundamental interaction patterns for AI agents
+
+  --- The Four Patterns ---
+
+    1. SINGLE Agent
+       One LLM, no tool calls, no memory — direct Q&A.
+       Use: simple classification, translation, formatting.
+
+    2. SEQUENTIAL (Chain / Pipeline)
+       Agent A output -> Agent B input -> Agent C output.
+       Each step feeds the next. Fixed order, no loops.
+       Use: data processing pipelines, multi-step transformations.
+
+    3. PARALLEL (Fan-out / Map)
+       Same input sent to multiple agents simultaneously.
+       Results merged at the end.
+       Use: multi-perspective analysis, parallel validation.
+
+    4. ROUTER (Gate / Classifier)
+       Input classified first, then routed to the right specialist agent.
+       Use: customer support triage, intent-based routing.
+
+    Pattern    | Flow                  | Use Case
+    -----------|-----------------------|---------------------------------------
+    Single     | input -> agent        | classification, formatting
+    Sequential | agent1 -> agent2 ->   | data pipelines, multi-step transforms
+    Parallel   | input -> [agents] ->  | multi-perspective analysis
+    Router     | classifier -> agent   | intent routing, support triage
+
+  --- PIPE | Operator in Practice ---
+
+    The | (pipe) operator is the LCEL way to chain components:
+      prompt | llm | parser
+
+    LCEL piping is the SEQUENTIAL pattern built into LangChain.
+    Each stage passes its output as input to the next stage.
+
+    delimiters = custom separators for parsing structured output
+    (e.g., "Answer: ... Confidence: ..." -> split on "Confidence:")
+
+================================================================================
+35. GENAI ERROR HANDLING & API CODES
+================================================================================
+# ponytail: know your errors before they bite you
+
+  --- Common HTTP Error Codes in GenAI Projects ---
+
+    200:  Success
+    400:  Bad Request (malformed prompt, invalid params)
+    401:  Unauthorized (invalid or missing API key)
+    403:  Forbidden (no access to that model)
+    404:  Not Found (wrong endpoint URL)
+    429:  Rate Limit Exceeded (too many requests — back off!)
+    500:  Internal Server Error (provider-side issue, retry later)
+    502:  Bad Gateway (upstream outage)
+    503:  Service Unavailable (overloaded, retry with backoff)
+    504:  Gateway Timeout (response too slow)
+
+  --- Handling 429 (Rate Limit) ---
+
+    import time, random
+
+    def call_with_retry(llm, prompt, max_retries=3):
+        for attempt in range(max_retries):
+            try:
+                return llm.invoke(prompt)
+            except Exception as e:
+                if "429" in str(e):
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    print(f"Rate limited. Retrying in {wait:.1f}s...")
+                    time.sleep(wait)
+                else:
+                    raise
+        raise Exception("Max retries exceeded")
+
+  --- JSON Dumps & Parsing Errors ---
+
+    LLMs often return malformed JSON. Always use OutputFixingParser:
+
+    from langchain.output_parsers import OutputFixingParser
+    from langchain_core.output_parsers import JsonOutputParser
+
+    parser = OutputFixingParser.from_llm(parser=JsonOutputParser(), llm=llm)
+    # Auto-fixes: feeds bad JSON + error message back to LLM to fix it
+
+  --- Generators for Streaming ---
+
+    def stream_response(llm, prompt):
+        for chunk in llm.stream(prompt):
+            yield chunk.content  # yields tokens one by one
+
+    for token in stream_response(llm, "Write a story"):
+        print(token, end="", flush=True)
+
+================================================================================
+36. GENAI AUTOMATION & TRIGGERS
+================================================================================
+# ponytail: run GenAI workflows without touching a keyboard
+
+  --- Trigger Types ---
+
+    Manual Trigger:
+      You kick it off — script, button, CLI command.
+      Use: testing, ad-hoc analysis, one-off reports.
+
+    Event Trigger:
+      Something happens -> automation runs.
+      Examples: new file in S3, webhook from GitHub, Slack message,
+      email received, database row inserted.
+      Tools: Zapier, n8n, AWS Lambda, GitHub Actions.
+
+    Schedule Trigger (Cron):
+      Runs at set times — daily, hourly, every Monday.
+      Use: daily summary, nightly batch processing, weekly reports.
+      Example cron: "0 9 * * 1" = every Monday at 9 AM.
+
+    Sequential Workflow:
+      Step A -> Step B -> Step C (with conditions, branches, waits).
+      Like a flowchart — each step can pass data to the next.
+
+  --- Simple Scheduled Automation Example ---
+
+    # Run this daily via cron: "0 8 * * * python daily_summary.py"
+    import os, json
+    from langchain_openai import ChatOpenAI
+
+    llm = ChatOpenAI(model="gpt-4")
+    with open("today_data.txt") as f:
+        data = f.read()
+    summary = llm.invoke(f"Summarize this data in 3 bullet points:\n{data}")
+    with open("daily_summary.md", "w") as f:
+        f.write(f"# Daily Summary\n{summary.content}")
+    print("Summary saved to daily_summary.md")
+
+================================================================================
+37. LANGCHAIN FAQ (EXPANDED)
+================================================================================
+# ponytail: answers to your questions about LangChain internals
+
+  --- Q: What is LangChain in detail? ---
+
+    LangChain is a framework for building LLM-powered applications.
+    It provides UNIFIED INTERFACES for models, prompts, memory, chains,
+    agents, tools, and retrieval — so you can swap components without
+    rewriting code.
+
+    Core layers:
+      1. Model I/O:   LLMs, Chat Models, Embeddings
+      2. Retrieval:   Document loaders, Splitters, Vector stores, Retrievers
+      3. Chains:      LCEL (| operator), Runnable sequences
+      4. Memory:      Conversation history, State persistence
+      5. Agents:      Tool selection, Multi-step reasoning, Execution loop
+      6. Callbacks:   Logging, Tracing, Streaming, Monitoring
+
+  --- Q: What is the LangChain framework and ecosystem? ---
+
+    Framework (langchain-core): Models, prompts, chains, memory, agents, RAG
+    LangGraph:                  Stateful multi-agent orchestration
+    LangSmith:                  Debug, test, monitor, evaluate
+    LangServe:                  Deploy chains as REST APIs
+    Partner packages:           langchain-openai, langchain-anthropic, etc.
+
+  --- Q: Types of LLM Models and Purposes ---
+
+    Base/Foundation Models:     GPT-4, Claude, Llama (general purpose)
+    Fine-tuned Models:          CodeLlama (code), Med-PaLM (medical)
+    Instruction-tuned:          GPT-4-turbo, Llama-2-chat (follow instructions)
+    Embedding Models:           text-embedding-3-small, ada-002 (vector search)
+    Multimodal Models:          GPT-4V, Claude 3 (text + images)
+    Small Models:               Phi-3, Llama-3-8B (edge deployment)
+
+  --- Q: Difference between LLM and Embedding Model ---
+
+    LLM (Generative):
+      Input:  text prompt
+      Output: generated text (next tokens)
+      Purpose: answer questions, write code, summarize, chat
+      Example: GPT-4, Claude, Llama
+
+    Embedding Model:
+      Input:  text
+      Output: vector (list of floats, e.g., 1536 dimensions)
+      Purpose: measure semantic similarity, search, clustering
+      Example: text-embedding-3-small, all-MiniLM-L6-v2
+
+    Analogy:
+      LLM = Writer (produces new text)
+      Embedding = Indexer (measures how similar texts are)
+
+  --- Q: Search Techniques in LangChain ---
+
+    Vector Similarity Search:
+      db.similarity_search(query, k=5)  # top 5 by cosine distance
+
+    Maximum Marginal Relevance (MMR):
+      db.max_marginal_relevance_search(query, k=5, fetch_k=20)
+      # Balances relevance + diversity (avoids returning 5 near-identical docs)
+
+    Hybrid Search (Vector + Keyword):
+      # Combines semantic similarity with BM25 keyword matching
+      # Requires a hybrid retriever or a database that supports both
+
+    Multi-Query Retrieval:
+      from langchain.retrievers.multi_query import MultiQueryRetriever
+      retriever = MultiQueryRetriever.from_llm(retriever=db.as_retriever(), llm=llm)
+      # Generates multiple query variations, retrieves for each, merges results
+
+    Self-Query Retriever:
+      # Lets the LLM infer FILTERS from the query
+      # e.g., "articles about LoRA from 2024" -> filters by year
+
+    Contextual Compression:
+      # Retrieves docs, then compresses/reranks them to keep only relevant parts
