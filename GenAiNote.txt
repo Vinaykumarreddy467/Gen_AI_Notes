@@ -2981,3 +2981,16 @@ input when generating each word.
 
     Contextual Compression:
       # Retrieves docs, then compresses/reranks them to keep only relevant parts
+
+---
+
+## Companion Files
+
+- **RAG with LangChain** → [`RAG_with_LangChain.md`](./RAG_with_LangChain.md)
+  Complete RAG pipeline with code examples: load, split, embed, store, retrieve, generate.
+  Includes: basic RAG chain, memory-aware RAG, parameter tuning guide.
+
+- **Types of RAG** → [`Types_of_RAG.md`](./Types_of_RAG.md)
+  12 RAG variants explained with when to use each: Naive, Query Rewriting, Reranking,
+  Multi-Query, HyDE, Agentic, Graph, Self-RAG, Corrective, Fusion, Hierarchical, Multi-Hop.
+  Includes: comparison table, decision flowchart.
