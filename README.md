@@ -3499,3 +3499,263 @@ input when generating each word.
   # res = executor.invoke({"input": "How are you doing today?"})
   # print(res)
 
+---
+
+## OUTPUT PARSERS & STRUCTURED OUTPUT — DETAILED REFERENCE
+# see also: Section 33 #3 (Output Parsers), Section 40 (TypedDict vs Pydantic vs JSON Schema)
+
+--- Output Parsers in LangChain ---
+
+  Output parsers convert raw LLM responses into structured formats (JSON, CSV,
+  Pydantic models, etc.). They ensure consistency, validation, and ease of use.
+
+  | Parser                  | Output Format          | Use When                               |
+  |-------------------------|------------------------|----------------------------------------|
+  | StrOutputParser         | Plain string           | Simplest — just extract text content   |
+  | JsonOutputParser        | JSON dict              | LLM returns JSON                       |
+  | CommaSeparatedList      | List[str]              | LLM returns "a, b, c"                  |
+  | StructuredOutputParser  | Dict with typed fields | Need predefined field schema           |
+  | PydanticOutputParser    | Pydantic model         | Need validation + type safety          |
+  | OutputFixingParser      | Same as inner parser   | Auto-fix malformed output using LLM    |
+  | RetryWithErrorOutputParser | Same as inner parser | Retry with error message               |
+  | DataFrameOutputParser   | Pandas DataFrame       | Tabular data                           |
+
+  # PydanticOutputParser — validation + type safety
+  from langchain_core.output_parsers import PydanticOutputParser
+  from pydantic import BaseModel, Field
+
+  class Review(BaseModel):
+      summary: str = Field(description="Brief summary")
+      sentiment: str = Field(description="pos, neg, or neutral")
+
+  parser = PydanticOutputParser(pydantic_object=Review)
+  prompt = PromptTemplate(
+      template="Review: {input}\n{format_instructions}",
+      partial_variables={"format_instructions": parser.get_format_instructions()},
+  )
+  chain = prompt | llm | parser
+  result = chain.invoke({"input": "Great product!"})
+  # result.summary -> "Great product!", result.sentiment -> "pos"
+
+--- Pydantic Field Constraints ---
+
+  Field() supports validation rules that run automatically:
+
+  from pydantic import BaseModel, Field, EmailStr
+  from typing import Optional
+
+  class Student(BaseModel):
+      name: str = "vinay"
+      age: Optional[int] = None
+      email: EmailStr                                # auto-validates email format
+      cgpa: float = Field(gt=0, lt=10, default=5, description="decimal 0-10")
+
+  stu = Student(age="14", email="vinay@gmail.com")   # age coerced str->int
+  print(stu.model_dump()["age"])                     # 14
+
+  Constraints: gt (greater than), lt (less than), ge, le, min_length,
+  max_length, pattern (regex), default, description.
+
+--- Ollama + Pydantic Structured Output ---
+
+  from dotenv import load_dotenv
+  from typing import Optional, Literal
+  from pydantic import BaseModel, Field
+  from langchain_ollama import ChatOllama
+
+  load_dotenv()
+
+  llm = ChatOllama(model="phi3:latest", temperature=0.5)
+
+  class Review(BaseModel):
+      key_themes: list[str] = Field(description="Key themes in the review")
+      summary: str = Field(description="Brief summary")
+      sentiment: Literal["pos", "neg"] = Field(description="positive or negative")
+      pros: Optional[list[str]] = Field(default=None, description="Pros listed")
+      cons: Optional[list[str]] = Field(default=None, description="Cons listed")
+      name: Optional[str] = Field(default=None, description="Reviewer name")
+
+  structured = llm.with_structured_output(Review)
+  result = structured.invoke("The product is amazing but expensive")
+  # result.key_themes = ['quality', 'pricing']
+  # result.summary = "User likes product but finds it expensive"
+  # result.sentiment = "pos"
+  # result.pros = ["amazing quality"]
+
+--- Chains: Sequential, Parallel, Conditional, RunnableParallel ---
+
+  Chains in LangChain compose multiple steps. LCEL makes this elegant.
+
+  # Sequential: output of step 1 -> input of step 2
+  chain = prompt | llm | parser                # LCEL pipe
+  # Or: chain1 = prompt1 | llm1 | parser1
+  #     chain2 = prompt2 | llm2 | parser2
+  #     full = chain1 | chain2                 # sequential composition
+
+  # Parallel (RunnableParallel): run branches simultaneously, merge results
+  from langchain_core.runnables import RunnableParallel
+
+  chain1 = prompt1 | llm | StrOutputParser()
+  chain2 = prompt2 | llm | StrOutputParser()
+  parallel = RunnableParallel(answer1=chain1, answer2=chain2)
+  result = parallel.invoke({"topic": "LoRA"})
+  # result["answer1"] = "...explanation...", result["answer2"] = "...example..."
+
+  # Conditional: route to different chains based on input
+  from langchain_core.runnables import RunnableBranch
+
+  branch = RunnableBranch(
+      (lambda x: len(x["input"]) > 100, long_doc_chain),   # if long doc
+      (lambda x: x["lang"] == "en", english_chain),          # if english
+      default_chain,                                         # fallback
+  )
+
+--- Memory in LangChain (Expanded) ---
+
+  # ponytail: Memory turns stateless LLMs into stateful conversations.
+
+  --- Stateful vs Stateless ---
+
+    Stateless: every request is standalone. LLM has no memory of past turns.
+    Stateful:  previous Q&A is passed with each new question.
+
+    Without memory:
+      You: "What is LoRA?"     LLM: "LoRA is..."
+      You: "How it works?"     LLM: "¯\_(ツ)_/¯"  (forgot "it")
+
+    With memory:
+      You: "What is LoRA?"     LLM: "LoRA is..."
+      You: "How it works?"     LLM: "LoRA works by..."  (remembers context)
+
+  --- Types of Memory ---
+
+    | Memory Type                        | What It Stores                      | Best For                    |
+    |------------------------------------|-------------------------------------|-----------------------------|
+    | ConversationBufferMemory           | Full history (grows unbounded)      | Short chats (<5 turns)      |
+    | ConversationBufferWindowMemory     | Last K turns only (fixed window)    | Ongoing conversations       |
+    | ConversationSummaryMemory          | Summarized old messages             | Long convos, token-limited  |
+    | ConversationSummaryBufferMemory    | Recent verbatim + old summarized     | Hybrid — best all-rounder   |
+    | ConversationEntityMemory           | Facts about entities (people/places) | Personal assistants, CRM    |
+    | VectorStoreRetrieverMemory         | Relevant past by semantic similarity | Long-running agents         |
+
+  --- How to Use Memory in Chains ---
+
+    # Old way (Legacy Chain)
+    from langchain.chains import ConversationChain
+    from langchain.memory import ConversationBufferWindowMemory
+
+    chain = ConversationChain(
+        llm=llm,
+        memory=ConversationBufferWindowMemory(k=3),
+    )
+    chain.run("Hi I'm Mike")        # stores automatically
+    chain.run("What's my name?")    # "Your name is Mike"
+
+    # New way (LCEL + RunnableWithMessageHistory)
+    from langchain_core.runnables.history import RunnableWithMessageHistory
+    from langchain_community.chat_message_histories import ChatMessageHistory
+
+    store = {}
+    def get_session(session_id):
+        if session_id not in store:
+            store[session_id] = ChatMessageHistory()
+        return store[session_id]
+
+    chain = prompt | llm | StrOutputParser()
+    with_history = RunnableWithMessageHistory(
+        chain, get_session,
+        input_messages_key="question",
+        history_messages_key="history",
+    )
+    with_history.invoke(
+        {"question": "Hi I'm Mike"},
+        config={"configurable": {"session_id": "user-123"}}
+    )
+
+  --- Advantages of LangChain Memory ---
+
+    - No manual history management — automatic injection
+    - Multiple strategies: window, summary, vector, entity
+    - Session isolation via session_id (one memory per user)
+    - Pluggable backends: in-memory, Redis, SQLite, PostgreSQL, DynamoDB
+    - Composable with LCEL chains, agents, RAG pipelines
+    - Token-aware: summarization keeps you under context limits
+
+  --- Disadvantages of Memory ---
+
+    - Token cost: every request includes history -> higher API bill
+    - Context limit: long conversations still hit max_tokens eventually
+    - Extra LLM calls: summary memory calls LLM to summarize -> adds latency + cost
+    - Stale context: old memories may confuse the model if irrelevant
+    - State management: session persistence across restarts needs a DB
+
+  --- Key Takeaways ---
+
+    - Always use memory for conversational apps
+    - Start with BufferWindowMemory (k=5-10) — simplest, good enough most times
+    - Upgrade to SummaryBufferMemory for long conversations
+    - Use VectorStoreRetrieverMemory for agent apps with rich history
+    - Be aware of token costs — memory doubles or triples your per-request tokens
+
+================================================================================
+41. DOCUMENT LOADERS IN LANGCHAIN
+================================================================================
+# ponytail: load data from anywhere -> standard Document objects -> chunk -> embed -> RAG
+
+  Document loaders bring data from various sources into a standardized format:
+  a list of `Document` objects.
+
+  Document(
+      page_content="the actual text content",
+      metadata={"source": "file.pdf", "page": 1, ...}
+  )
+
+--- Common Loaders ---
+
+  | Loader                     | Source            | Best For                         |
+  |----------------------------|-------------------|----------------------------------|
+  | TextLoader                 | .txt files        | Plain text                       |
+  | PyPDFLoader                | PDF files         | Text-based PDFs                  |
+  | PyMuPDFLoader              | PDF files         | Better text extraction than PyPDF|
+  | UnstructuredPDFLoader      | PDF files         | Complex layouts, tables          |
+  | UnstructuredFileLoader     | Any file type     | Multi-format (PDF, DOCX, HTML)   |
+  | WebBaseLoader              | URLs              | Web scraping                     |
+  | CSVLoader                  | .csv files        | Tabular data                     |
+  | JSONLoader                 | .json files       | JSON / JSONL                     |
+  | DirectoryLoader            | All files in dir  | Batch loading                    |
+
+  from langchain_community.document_loaders import (
+      TextLoader, PyPDFLoader, WebBaseLoader, CSVLoader, DirectoryLoader
+  )
+
+  # Text
+  docs = TextLoader("notes.txt").load()
+
+  # PDF — each page is one Document
+  docs = PyPDFLoader("report.pdf").load()
+  # [Document("page 1 text", metadata={"page": 0, "source": "report.pdf"}),
+  #  Document("page 2 text", metadata={"page": 1, "source": "report.pdf"})]
+
+  # Web
+  docs = WebBaseLoader("https://example.com").load()
+
+  # Directory (all .txt files)
+  docs = DirectoryLoader("./docs/", glob="**/*.txt").load()
+
+--- PDF Loader Limitations ---
+
+  PyPDFLoader:
+    - Uses PyPDF2 under the hood
+    - Works great for TEXT-BASED PDFs
+    - Struggles with: scanned PDFs, complex layouts, tables, images
+
+  Better PDF options:
+    - PyMuPDFLoader:  better text extraction, preserves structure
+    - UnstructuredPDFLoader: uses document analysis for complex layouts
+    - AmazonTextractPDFLoader: OCR for scanned PDFs (AWS)
+
+  Rule of thumb:
+    Text PDF       -> PyPDFLoader or PyMuPDFLoader
+    Scanned PDF    -> UnstructuredPDFLoader or AmazonTextractPDFLoader
+    Complex layout -> UnstructuredPDFLoader
+
