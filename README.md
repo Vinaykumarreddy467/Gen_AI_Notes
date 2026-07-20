@@ -3739,8 +3739,133 @@ input when generating each word.
   # Web
   docs = WebBaseLoader("https://example.com").load()
 
-  # Directory (all .txt files)
-  docs = DirectoryLoader("./docs/", glob="**/*.txt").load()
+  # DirectoryLoader — load ALL files from a directory with pattern matching
+
+  --- What is DirectoryLoader? ---
+
+    DirectoryLoader loads EVERY matching file in a directory as a Document.
+    It combines a file loader (default: TextLoader) with a glob pattern.
+    Each file becomes one Document (or multiple if using a multi-page loader).
+
+  --- Glob Patterns Explained ---
+
+    Glob patterns use wildcards to match file paths (NOT regex):
+
+    | Pattern        | Matches                                | Example Files                    |
+    |----------------|----------------------------------------|----------------------------------|
+    | *.txt          | All .txt files in root (not subdirs)   | notes.txt, data.txt              |
+    | **/*.txt       | All .txt in root AND subdirectories    | docs/notes.txt, docs/2024/a.txt  |
+    | **/*            | ALL files, any extension, any depth    | everything                       |
+    | data/*.csv     | All .csv files in data/ directory      | data/2024.csv, data/sales.csv    |
+    | **/report*     | Any file starting with "report"        | report.pdf, docs/report_final.md |
+    | *.{pdf,txt}    | .pdf OR .txt in root                   | file.pdf, notes.txt              |
+    | [0-9]*.txt     | .txt files starting with a digit       | 1.txt, 2024_notes.txt            |
+
+    # Common glob patterns
+    from langchain_community.document_loaders import DirectoryLoader
+
+    # Single extension, current dir only
+    loader = DirectoryLoader("./data/", glob="*.txt")
+
+    # Recursive — all .md in any subfolder
+    loader = DirectoryLoader("./docs/", glob="**/*.md")
+
+    # Everything — every file of every type
+    loader = DirectoryLoader("./data/", glob="**/*")
+
+    # Multiple extensions using braced pattern
+    loader = DirectoryLoader("./docs/", glob="**/*.{pdf,txt,md}")
+
+    # Files starting with a specific prefix
+    loader = DirectoryLoader("./reports/", glob="report_*.pdf")
+
+  --- What Loader Does DirectoryLoader Use? ---
+
+    By default, DirectoryLoader uses TextLoader for every file.
+    For non-txt files, you need to pass a loader_cls:
+
+    from langchain_community.document_loaders import DirectoryLoader, PyPDFLoader, TextLoader
+
+    # Load all PDFs using PyPDFLoader
+    loader = DirectoryLoader(
+        "./docs/",
+        glob="**/*.pdf",
+        loader_cls=PyPDFLoader,           # <-- use PyPDFLoader instead of TextLoader
+    )
+
+    # Multiple file types — use a loader_map
+    loaders = {
+        ".pdf": PyPDFLoader,
+        ".txt": TextLoader,
+        ".md": TextLoader,
+    }
+    loader = DirectoryLoader(
+        "./docs/",
+        glob="**/*",
+        loader_cls=loaders,               # <-- auto-select loader by extension
+    )
+
+  --- Key Parameters ---
+
+    | Parameter         | What it does                             | Default       |
+    |-------------------|------------------------------------------|---------------|
+    | path              | Root directory to scan                   | (required)    |
+    | glob              | File matching pattern                    | "**/[!.]*" * |
+    | loader_cls        | Loader class or dict (by extension)      | TextLoader    |
+    | silent_errors     | Skip files that fail to load             | False         |
+    | load_hidden       | Include hidden files (dotfiles)          | False         |
+    | recursive         | Search subdirectories (implied by **)    | True          |
+    | use_multithreading| Load files in parallel                   | False         |
+    | sample_size       | Limit number of files loaded             | None (all)    |
+
+    * Default glob "**/[!.]*" = all non-hidden files, any extension, recursive.
+
+    # Advanced: multithreaded loading with error skipping
+    loader = DirectoryLoader(
+        "./large_docs/",
+        glob="**/*.pdf",
+        loader_cls=PyPDFLoader,
+        use_multithreading=True,             # faster for many files
+        silent_errors=True,                  # skip corrupt PDFs
+        show_progress=True,                  # show tqdm progress bar
+    )
+    docs = loader.load()
+    print(f"Loaded {len(docs)} documents")
+
+  --- What DirectoryLoader Loads: File Types ---
+
+    OUT OF THE BOX (TextLoader):
+      .txt, .md, .py, .js, .html, .csv, .json, .yaml, .xml
+      Any text-based file. Binary files will produce garbled output.
+
+    WITH CUSTOM loader_cls:
+      .pdf   ->  PyPDFLoader, PyMuPDFLoader, UnstructuredPDFLoader
+      .docx  ->  UnstructuredWordDocumentLoader
+      .xlsx  ->  UnstructuredExcelLoader
+      .pptx  ->  UnstructuredPowerPointLoader
+      .csv   ->  CSVLoader
+      .json  ->  JSONLoader
+      .html  ->  BSHTMLLoader
+
+    # Example: load mixed file types with proper loaders
+    from langchain_community.document_loaders import (
+        DirectoryLoader, TextLoader, PyMuPDFLoader, CSVLoader,
+        UnstructuredWordDocumentLoader,
+    )
+
+    loader = DirectoryLoader(
+        "./mixed_docs/",
+        glob="**/*",
+        loader_cls={
+            ".pdf": PyMuPDFLoader,
+            ".docx": UnstructuredWordDocumentLoader,
+            ".csv": CSVLoader,
+            ".txt": TextLoader,
+            ".md": TextLoader,
+        },
+    )
+    docs = loader.load()
+    # All files parsed with the correct loader, returned as Documents
 
 --- PDF Loader Limitations ---
 
